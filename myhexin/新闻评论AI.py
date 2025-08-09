@@ -182,7 +182,7 @@ class NewsAnalyzer:
                     {"role": "system", "content": "你是一个专业的新闻分析师，善于识别新闻中的各种要点。请用中文分析，并请始终返回标准JSON格式内容，不要添加任何注释或markdown格式，不加解释和任何说明。"},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.7
+                temperature=1
             )
             raw_content = response.choices[0].message.content.strip()
 
@@ -343,7 +343,7 @@ class CommentGenerator:
                     {"role": "system", "content": f"你是一个{style}风格的网络评论高手。请始终返回标准JSON格式内容，不要添加任何注释或markdown格式，不加解释和任何说明。"},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.8
+                temperature=1
             )
 
             raw_content = response.choices[0].message.content.strip()
@@ -372,8 +372,10 @@ class ImageGenerator:
 
     def __init__(self, config: Dict):
         self.config = config
-        self.provider = config.get('image_provider', 'gpt5')  # 默认使用GPT-5
+        # 默认使用 GPT-5
+        self.provider = config.get('image_provider', 'dalle')
 
+        # 需要 OpenAI key 的分支
         if self.provider in ['gpt5', 'dalle']:
             openai.api_key = config['openai_api_key']
         elif self.provider == 'flux':
@@ -400,7 +402,7 @@ class ImageGenerator:
 
         try:
             if self.provider == 'gpt5':
-                return self._generate_with_gpt5(image_prompt)
+                return self._generate_with_dalle(image_prompt)
             elif self.provider == 'dalle':
                 return self._generate_with_dalle(image_prompt)
             elif self.provider == 'flux':
@@ -413,3 +415,345 @@ class ImageGenerator:
         except Exception as e:
             print(f"图片生成失败: {e}")
             return self._generate_text_image(comment)
+
+    def _generate_with_gpt5(self, prompt: str) -> str:
+        """使用 GPT-5 生成图片（若账号已开通 GPT-5 图像能力）"""
+        # 若你的 GPT-5 账户不支持 images.generate，可在这里改为调用 chat.completions + 自定义服务对接
+        response = openai.images.generate(
+            model="gpt-5",          # 统一成 gpt-5
+            prompt=prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1
+        )
+        return response.data[0].url
+
+    def _generate_with_dalle(self, prompt: str) -> str:
+        """使用 DALL·E 3 生成图片"""
+        response = openai.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1
+        )
+        return response.data[0].url
+
+    def _generate_with_flux(self, prompt: str) -> str:
+        """使用 Flux 生成图片（示例，根据实际 API 调整）"""
+        headers = {
+            'Authorization': f'Bearer {self.flux_api_key}',
+            'Content-Type': 'application/json'
+        }
+        data = {
+            'prompt': prompt,
+            'width': 1024,
+            'height': 1024,
+            'num_inference_steps': 28
+        }
+        response = requests.post('https://api.flux.ai/generate', headers=headers, json=data)
+        return response.json()['url']
+
+    def _generate_with_firefly(self, prompt: str) -> str:
+        """使用 Adobe Firefly 生成图片（示例，根据实际 API 调整）"""
+        headers = {
+            'Authorization': f'Bearer {self.firefly_api_key}',
+            'Content-Type': 'application/json'
+        }
+        data = {
+            'prompt': prompt,
+            'size': {'width': 1024, 'height': 1024}
+        }
+        response = requests.post(
+            'https://firefly-api.adobe.io/v1/images/generate',
+            headers=headers, json=data
+        )
+        return response.json()['outputs'][0]['image']['url']
+
+    def _generate_text_image(self, comment: GeneratedComment) -> str:
+        """生成文字卡片图片作为备选"""
+        try:
+            img = Image.new('RGB', (800, 600), color='white')
+            draw = ImageDraw.Draw(img)
+            try:
+                font = ImageFont.truetype("arial.ttf", 36)
+                small_font = ImageFont.truetype("arial.ttf", 24)
+            except:
+                font = ImageFont.load_default()
+                small_font = font
+
+            lines = self._wrap_text(comment.content, 40)
+            y = 200
+            for line in lines:
+                draw.text((50, y), line, font=font, fill='black')
+                y += 50
+
+            draw.text((50, 550), f"风格: {comment.style}", font=small_font, fill='gray')
+
+            buffer = io.BytesIO()
+            img.save(buffer, format='PNG')
+            img_str = base64.b64encode(buffer.getvalue()).decode()
+            return f"data:image/png;base64,{img_str}"
+        except Exception as e:
+            print(f"文字图片生成失败: {e}")
+            return None
+
+    def _wrap_text(self, text: str, width: int) -> List[str]:
+        """文字换行处理"""
+        lines = []
+        words = text.split()
+        current_line = []
+        current_length = 0
+
+        for word in words:
+            if current_length + len(word) + 1 <= width:
+                current_line.append(word)
+                current_length += len(word) + 1
+            else:
+                if current_line:
+                    lines.append(' '.join(current_line))
+                current_line = [word]
+                current_length = len(word)
+
+        if current_line:
+            lines.append(' '.join(current_line))
+        return lines
+
+
+class NewsCommentBot:
+    """新闻评论机器人主类"""
+
+    def __init__(self, config: Dict):
+        self.extractor = NewsContentExtractor()
+        self.analyzer = NewsAnalyzer(config['openai_api_key'])
+        self.reddit_miner = RedditMiner(
+            config['reddit_client_id'],
+            config['reddit_client_secret'],
+            config['reddit_user_agent']
+        )
+        self.comment_generator = CommentGenerator(config['openai_api_key'])
+        self.image_generator = ImageGenerator(config)
+
+    def process_news_url(self, url: str) -> Dict:
+        """处理新闻URL，生成评论和图片"""
+        print(f"开始处理新闻: {url}")
+
+        try:
+            # 1. 提取新闻内容
+            print("提取新闻内容...")
+            news_data = self.extractor.extract_content(url)
+
+            # 2. 分析新闻内容
+            print("分析新闻内容...")
+            analysis = self.analyzer.analyze_news(news_data['title'], news_data['content'])
+
+            # 3. 搜索相关Reddit评论
+            print("搜索Reddit参考评论...")
+            keywords = analysis.core_viewpoints + [news_data['title'].split()[0]]
+            reddit_refs = self.reddit_miner.find_related_discussions(keywords)
+
+            # 4. 生成评论
+            print("生成原创评论...")
+            generated_comments = self.comment_generator.generate_comments(analysis, reddit_refs)
+
+            # 5. 为最佳评论生成图片
+            print("生成配套图片...")
+            if generated_comments:
+                for cmt in generated_comments:
+                    image_url = self.image_generator.generate_comment_image(cmt, news_data['title'])
+                    cmt.image_url = image_url
+                    print("图片Url: " + image_url)
+
+            # 6. 整理结果
+            result = {
+                'news': news_data,
+                'analysis': analysis,
+                'reddit_references': reddit_refs,
+                'generated_comments': generated_comments,
+                'processing_time': datetime.now().isoformat(),
+                'success': True
+            }
+
+            print("处理完成！")
+            return result
+
+        except Exception as e:
+            print(f"处理失败: {e}")
+            return {
+                'error': str(e),
+                'success': False
+            }
+
+    def export_result(self, result: Dict, filename: str = None):
+        """导出结果到文件"""
+        if not filename:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"news_comments_{timestamp}.json"
+
+        # 转换为可序列化的格式
+        export_data = {}
+
+        if result.get('success'):
+            export_data = {
+                'news': result['news'],
+                'analysis': {
+                    'humor_points': result['analysis'].humor_points,
+                    'criticism_points': result['analysis'].criticism_points,
+                    'core_viewpoints': result['analysis'].core_viewpoints,
+                    'controversial_points': result['analysis'].controversial_points,
+                    'summary': result['analysis'].summary
+                },
+                'reddit_references': [
+                    {
+                        'comment': ref.comment,
+                        'score': ref.score,
+                        'style': ref.style,
+                        'subreddit': ref.subreddit
+                    }
+                    for ref in result['reddit_references']
+                ],
+                'generated_comments': [
+                    {
+                        'content': comment.content,
+                        'style': comment.style,
+                        'image_prompt': comment.image_prompt,
+                        'confidence': comment.confidence,
+                        'image_url': getattr(comment, 'image_url', None)
+                    }
+                    for comment in result['generated_comments']
+                ],
+                'processing_time': result['processing_time']
+            }
+        else:
+            export_data = {'error': result['error']}
+
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(export_data, f, ensure_ascii=False, indent=2)
+
+        print(f"结果已导出到: {filename}")
+
+
+def main():
+    """主函数 - 使用配置文件系统"""
+
+    # 导入配置管理器
+    try:
+        from config_manager import ConfigManager
+    except ImportError:
+        print("❌ 请确保 config_manager.py 文件在同一目录下")
+        print("或者手动配置 config 变量（参考原代码）")
+        return
+
+    try:
+        # 初始化配置管理器
+        print("🔧 正在加载配置...")
+        manager = ConfigManager()
+
+        # 验证并获取配置
+        config = manager.validate_and_setup()
+
+        if not config['openai_api_key']:
+            print("❌ OpenAI API密钥未配置，无法继续")
+            return
+
+        # 创建机器人实例
+        print("🤖 正在初始化新闻评论生成器...")
+        bot = NewsCommentBot(config)
+
+        # 交互式处理
+        print("\n=== 新闻评论生成器 ===")
+
+        # 加载用户历史输入
+        user_inputs = manager.loader.load_user_inputs()
+        last_url = user_inputs.get('last_news_url', '')
+
+        if last_url:
+            print(f"上次处理的链接: {last_url}")
+            use_last = input("是否继续使用上次的链接? (Y/n): ").strip().lower()
+            if use_last in ['', 'y', 'yes']:
+                news_url = last_url
+            else:
+                news_url = input("请输入新闻链接: ").strip()
+        else:
+            news_url = input("请输入新闻链接: ").strip()
+
+        if not news_url:
+            print("❌ 未输入有效的新闻链接")
+            return
+
+        # 保存当前URL
+        user_inputs['last_news_url'] = news_url
+        manager.loader.save_user_inputs(user_inputs)
+
+        # 处理新闻
+        print(f"\n🔄 正在处理新闻: {news_url}")
+        result = bot.process_news_url(news_url)
+
+        if result.get('success'):
+            print("\n✅ 处理完成！")
+
+            # 显示结果摘要
+            print("\n=== 新闻分析结果 ===")
+            print(f"📰 标题: {result['news']['title']}")
+            print(f"📝 摘要: {result['analysis'].summary}")
+
+            # 显示分析要点
+            analysis = result['analysis']
+            if analysis.humor_points:
+                print(f"😄 笑点: {'; '.join(analysis.humor_points)}")
+            if analysis.criticism_points:
+                print(f"🎯 槽点: {'; '.join(analysis.criticism_points)}")
+            if analysis.controversial_points:
+                print(f"⚡ 争议点: {'; '.join(analysis.controversial_points)}")
+
+            # 显示生成的评论
+            print(f"\n=== 生成的评论 ({len(result['generated_comments'])} 个) ===")
+            for i, comment in enumerate(result['generated_comments'], 1):
+                style_emoji = {
+                    'provocative': '🔥',
+                    'witty': '😄',
+                    'insightful': '🧠',
+                    'question': '❓'
+                }.get(comment.style, '💬')
+
+                print(f"\n{i}. {style_emoji} 【{comment.style}】(评分: {comment.confidence:.2f})")
+                print(f"💬 {comment.content}")
+                print(f"🎨 图片创意: {comment.image_prompt}")
+
+                if hasattr(comment, 'image_url') and comment.image_url:
+                    print(f"🖼️  配套图片: {comment.image_url}")
+
+            # Reddit参考
+            if result['reddit_references']:
+                print(f"\n=== Reddit热门参考 ({len(result['reddit_references'])} 条) ===")
+                for i, ref in enumerate(result['reddit_references'][:3], 1):  # 只显示前3条
+                    print(f"{i}. [r/{ref.subreddit}] (👍{ref.score}) {ref.comment[:100]}...")
+
+            # 导出结果
+            print(f"\n💾 正在导出结果...")
+            bot.export_result(result)
+
+            # 询问是否继续处理其他新闻
+            continue_processing = input("\n是否继续处理其他新闻? (y/N): ").strip().lower()
+            if continue_processing in ['y', 'yes']:
+                main()  # 递归调用
+
+        else:
+            print(f"❌ 处理失败: {result['error']}")
+
+            # 提供故障排除建议
+            print("\n🔧 故障排除建议:")
+            print("1. 检查网络连接")
+            print("2. 确认API密钥正确")
+            print("3. 检查新闻链接是否可访问")
+            print("4. 查看配置文件设置")
+
+    except KeyboardInterrupt:
+        print("\n\n👋 用户取消操作")
+    except Exception as e:
+        print(f"\n❌ 程序运行出错: {e}")
+        print("请检查配置文件和网络连接")
+
+
+if __name__ == "__main__":
+    main()

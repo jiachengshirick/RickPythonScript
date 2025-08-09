@@ -45,7 +45,7 @@ class ConfigLoader:
                 'firefly_api_key': ''
             },
             'image_generation': {
-                'provider': 'gpt4o'
+                'provider': 'gpt5'
             },
             'reddit': {
                 'user_agent': 'NewsCommentBot/1.0',
@@ -133,7 +133,7 @@ class ConfigLoader:
 
         # 检查图片生成器配置
         provider = self.get('image_generation.provider')
-        if provider not in ['gpt4o', 'dalle', 'flux', 'firefly', 'local']:
+        if provider not in ['gpt5', 'dalle', 'flux', 'firefly', 'local']:
             errors['invalid_values'].append(f'image_generation.provider: {provider}')
 
         # 检查Reddit配置（可选）
@@ -146,7 +146,7 @@ class ConfigLoader:
 
     def save_user_inputs(self, inputs: Dict[str, Any]):
         """保存用户输入到配置文件"""
-        user_config_path = "../user_config.json"
+        user_config_path = "user_config.json"
 
         try:
             # 加载现有用户配置
@@ -170,7 +170,7 @@ class ConfigLoader:
 
     def load_user_inputs(self) -> Dict[str, Any]:
         """加载用户输入配置"""
-        user_config_path = "../user_config.json"
+        user_config_path = "user_config.json"
 
         try:
             if os.path.exists(user_config_path):
@@ -220,14 +220,14 @@ class ConfigManager:
         # 图片生成器选择
         print("\n2. 图片生成器选择")
         providers = {
-            '1': 'gpt4o',
+            '1': 'gpt5',
             '2': 'dalle',
             '3': 'flux',
             '4': 'firefly'
         }
 
         print("可选的图片生成器:")
-        print("1. GPT-5 (推荐，2025年最新)")
+        print("1. GPT-5 (推荐)")
         print("2. DALL-E 3 (稳定可靠)")
         print("3. Flux (开源，高质量)")
         print("4. Adobe Firefly (商用安全)")
