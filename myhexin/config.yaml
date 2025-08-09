@@ -1,0 +1,151 @@
+# config.yaml - 主配置文件
+---
+# API 配置
+api_keys:
+  openai_api_key:    "your_openai_api_key_here"
+  reddit_client_id:  "your_reddit_client_id_here"
+  reddit_client_secret: "your_reddit_client_secret_here"
+  flux_api_key:      "your_flux_api_key_here"
+  firefly_api_key:   "your_firefly_api_key_here"
+  anthropic_api_key: "your_anthropic_api_key_here"  # 如果使用 Claude
+
+# Reddit 配置
+reddit:
+  user_agent:           "YourProjectName/1.0 by YourUserAgent"
+  search_limit:         10
+  max_comments_per_post: 5
+  min_comment_score:    10
+  min_comment_length:   50
+
+# 图片生成配置
+image_generation:
+  provider:           "gpt5"     # 选项：dalle, flux, firefly, local
+  fallback_provider:  "dalle"     # 备选方案
+  # GPT-5 设置
+  gpt5:
+    model:   "gpt-5"
+    size:    "1024x1024"
+    quality: "standard"
+
+
+
+  # DALL·E 设置
+  dalle:
+    model:   "dall-e-3"
+    size:    "1024x1024"
+    quality: "standard"
+    style:   "natural"   # 或 "vivid"
+
+  # Flux 设置
+  flux:
+    model:        "flux-1.1-pro"
+    api_endpoint: "https://api.bfl.ml/v1/flux-pro-1.1"
+    width:        1024
+    height:       1024
+    steps:        28
+    guidance:     3.5
+
+  # Adobe Firefly 设置
+  firefly:
+    api_endpoint: "https://firefly-api.adobe.io/v2/images/generate"
+    preset:       "art"
+    size:
+      width:  1024
+      height: 1024
+
+  # 本地模型设置
+  local:
+    model_path: "./models/stable-diffusion"
+    device:     "cuda"   # 或 "cpu"
+
+# 内容分析配置
+content_analysis:
+  openai_model:            "gpt-5"  # 更经济的选择
+  temperature:             0.7
+  max_tokens:              2000
+  analysis_prompt_template: |
+    请分析以下新闻内容，识别出：
+    1. 笑点（有趣、搞笑的部分，最多3个）
+    2. 槽点（值得吐槽、批评的地方，最多3个）
+    3. 核心观点（文章的主要论点，最多3个）
+    4. 潜在争议点（可能引起争议的内容，最多3个）
+
+    标题：{title}
+    内容：{content}
+
+    请以JSON格式返回结果。
+
+# 评论生成配置
+comment_generation:
+  model:               "gpt-5"
+  temperature:         0.8
+  max_comment_length:  100
+  min_confidence:      0.6
+
+  styles:
+    provocative:
+      name:        "引战型"
+      description: "生成有争议性、能够引起讨论的评论，要犀利但不过分"
+      temperature: 0.9
+    witty:
+      name:        "幽默型"
+      description: "生成机智幽默的评论，可以是双关语、讽刺或巧妙的观察"
+      temperature: 0.8
+    insightful:
+      name:        "深刻型"
+      description: "生成深刻有见地的评论，提供新的视角或深度分析"
+      temperature: 0.6
+    question:
+      name:        "提问型"
+      description: "生成发人深省的问题，能够引发读者思考"
+      temperature: 0.7
+
+# 新闻提取配置
+news_extraction:
+  timeout:             10
+  max_content_length:  2000
+  max_images:          5
+  user_agent:          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+  content_selectors:
+    - '[class*="content"]'
+    - '[class*="article"]'
+    - '[class*="story"]'
+    - '[id*="content"]'
+    - '[id*="article"]'
+    - 'main'
+    - '.post-content'
+    - 'article'
+
+# 输出配置
+output:
+  export_format:       "json"    # 选项: json, html, markdown
+  export_images:       true
+  save_original_content: true
+  timestamp_format:    "%Y%m%d_%H%M%S"
+  output_directory:    "./output"
+
+# 日志配置
+logging:
+  level:           "INFO"   # DEBUG, INFO, WARNING, ERROR
+  file:            "./logs/news_bot.log"
+  max_file_size:   "10MB"
+  backup_count:    5
+
+# 性能配置
+performance:
+  max_concurrent_requests: 3
+  request_delay:           1.0    # 秒
+  retry_attempts:          3
+  cache_enabled:           true
+  cache_duration:          3600   # 秒
+
+# 安全配置
+security:
+  max_url_length:    2000
+  allowed_domains:   []       # 空列表表示允许所有域名
+  blocked_domains:
+    - "malicious-site.com"
+  content_filters:
+    - "spam"
+    - "adult"
+    - "violence"
