@@ -158,21 +158,21 @@ class NewsAnalyzer:
         """分析新闻内容，识别各种要点"""
 
         prompt = f"""
-        请用中文分析以下新闻内容，识别出：
+        请用英文分析以下新闻内容，识别出：
         1. 笑点（有趣、搞笑的部分）
         2. 槽点（值得吐槽、批评的地方）
         3. 核心观点（文章的主要论点）
         4. 潜在争议点（可能引起争议的内容）
-
+        请用英文书写每一个点。
         标题：{title}
         内容：{content[:2000]}
 
         请以JSON格式返回，包含以下字段：
-        - humor_points: 笑点列表
-        - criticism_points: 槽点列表
-        - core_viewpoints: 核心观点列表
-        - controversial_points: 争议点列表
-        - summary: 文章摘要（50字以内）
+        - humor_points: 
+        - criticism_points: 
+        - core_viewpoints: 
+        - controversial_points: 
+        - summary: （50字以内）
         """
 
         try:
@@ -217,16 +217,15 @@ class RedditMiner:
             user_agent=user_agent
         )
 
-    def find_related_discussions(self, keywords: List[str], limit: int = 10) -> List[RedditReference]:
+    def find_related_discussions(self, keywords: str, limit: int = 10) -> List[RedditReference]:
         """根据关键词搜索相关Reddit讨论"""
         references = []
 
         # 组合关键词进行搜索
-        query = ' OR '.join(keywords[:3])  # 限制关键词数量
-
         try:
+            redditCheck = self.reddit.subreddit('all').search(keywords, limit=limit, sort='hot')
             # 搜索热门帖子
-            for submission in self.reddit.subreddit('all').search(query, limit=limit, sort='hot'):
+            for submission in redditCheck:
                 # 获取高质量评论
                 submission.comments.replace_more(limit=0)  # 展开评论
 
@@ -310,7 +309,7 @@ class CommentGenerator:
 
         prompt = f"""
         # 角色
-        你是一名洞察力敏锐、语言风趣的社交媒体评论员。你的任务是基于一份新闻的核心分析，创作出一条简短、犀利、易于传播的原创评论，并为之构思一个富有创意的图片描述。
+        你是一名洞察力敏锐、语言风趣的社交媒体中文评论员。你的任务是基于一份新闻的核心分析，创作出一条简短、犀利、易于传播的原创评论，并为之构思一个富有创意的图片描述。
 
         # 新闻分析材料
         - **核心观点**: {'; '.join(analysis.core_viewpoints)}
@@ -550,7 +549,7 @@ class NewsCommentBot:
             # 3. 搜索相关Reddit评论
             print("搜索Reddit参考评论...")
             keywords = analysis.core_viewpoints + [news_data['title'].split()[0]]
-            reddit_refs = self.reddit_miner.find_related_discussions(keywords)
+            reddit_refs = self.reddit_miner.find_related_discussions(keywords[0])
 
             # 4. 生成评论
             print("生成原创评论...")
